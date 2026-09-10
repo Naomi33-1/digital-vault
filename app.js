@@ -394,7 +394,7 @@ function App() {
                     !isFirstTime && React.createElement('button', { type: 'button', className: 'btn btn-secondary', style: { marginTop: '10px', width: '100%' }, onClick: () => setShowRecoveryInput(true) }, ' Забыли пароль?'),
                     React.createElement('div', { className: 'info-box' },
                         React.createElement('p', null, isFirstTime ? '⚠️ Запомните мастер-пароль!' : '🔒 AES-256-GCM | PBKDF2 | Без сервера | Без регистрации'),
-                        React.createElement('p', { className: 'support-info' }, '📞 Техподдержка: +7 (999) 123-45-67 (создатель: Иванова И.И.)')
+                        React.createElement('p', { className: 'support-info' }, '📞 Техподдержка: +7 (927) 602-62-39 (создатель: Вагапова И.Ф.)')
                     )
                 )
             )
