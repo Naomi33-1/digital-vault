@@ -529,3 +529,27 @@ body.light-theme .info-box { background: rgba(102, 126, 234, 0.08); color: #4b55
     .btn-icon { padding: 6px 8px; font-size: 12px; }
     .card-actions .btn { font-size: 10px; padding: 6px; }
 }
+
+/* Исправление кнопок PIN-менеджера на мобильных */
+.pin-buttons-row {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.pin-buttons-row .btn {
+    min-width: 140px;
+    font-size: 13px;
+    padding: 10px 12px;
+    white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+    .pin-buttons-row {
+        flex-direction: column;
+    }
+    
+    .pin-buttons-row .btn {
+        width: 100%;
+        min-width: auto;
+    }
+}
