@@ -1,19 +1,16 @@
 // ===== МОДУЛЬ ШИФРОВАНИЯ =====
 const CryptoModule = {
-    generateSalt() {
-        return crypto.getRandomValues(new Uint8Array(16));
-    },
+    generateSalt() { return crypto.getRandomValues(new Uint8Array(16)); },
     async deriveKey(password, salt) {
         const encoder = new TextEncoder();
         const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits', 'deriveKey']);
-        return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' }, keyMaterial, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+        return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, keyMaterial, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
     },
     async encrypt(data, password) {
         const salt = this.generateSalt();
         const iv = crypto.getRandomValues(new Uint8Array(12));
         const key = await this.deriveKey(password, salt);
-        const encoder = new TextEncoder();
-        const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, encoder.encode(JSON.stringify(data)));
+        const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(data)));
         return { salt: Array.from(salt), iv: Array.from(iv), data: Array.from(new Uint8Array(encrypted)) };
     },
     async decrypt(encryptedObj, password) {
@@ -21,12 +18,12 @@ const CryptoModule = {
         const iv = new Uint8Array(encryptedObj.iv);
         const data = new Uint8Array(encryptedObj.data);
         const key = await this.deriveKey(password, salt);
-        const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, data);
+        const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
         return JSON.parse(new TextDecoder().decode(decrypted));
     }
 };
 
-// ===== МОДУЛЬ ХРАНЕНИЯ =====
+// ===== ХРАНЕНИЕ =====
 const StorageModule = {
     saveVault(v) { localStorage.setItem('digitalVault', JSON.stringify(v)); },
     loadVault() { const d = localStorage.getItem('digitalVault'); return d ? JSON.parse(d) : null; },
@@ -48,10 +45,10 @@ function analyzePasswordStrength(password) {
     if (password.length >= 8) score += 1; else feedback.push('Минимум 8 символов');
     if (password.length >= 12) score += 1;
     if (password.length >= 16) score += 1;
-    if (/[a-z]/.test(password)) score += 1; else feedback.push('Добавьте строчные буквы');
-    if (/[A-Z]/.test(password)) score += 1; else feedback.push('Добавьте заглавные буквы');
-    if (/[0-9]/.test(password)) score += 1; else feedback.push('Добавьте цифры');
-    if (/[^A-Za-z0-9]/.test(password)) score += 1; else feedback.push('Добавьте спецсимволы');
+    if (/[a-z]/.test(password)) score += 1; else feedback.push('Строчные буквы');
+    if (/[A-Z]/.test(password)) score += 1; else feedback.push('Заглавные буквы');
+    if (/[0-9]/.test(password)) score += 1; else feedback.push('Цифры');
+    if (/[^A-Za-z0-9]/.test(password)) score += 1; else feedback.push('Спецсимволы');
     let strength, color;
     if (score <= 2) { strength = 'Слабый'; color = '#ef4444'; }
     else if (score <= 4) { strength = 'Средний'; color = '#f59e0b'; }
@@ -61,12 +58,24 @@ function analyzePasswordStrength(password) {
 }
 
 function getCategoryName(cat) {
-    const names = { social: '💬 Соцсети', email: '📦 Почта', bank: '🏦 Банки', work: '💼 Работа', other: ' Другое' };
-    return names[cat] || ' Другое';
+    const names = { social: '💬 Соцсети', email: '📧 Почта', bank: '🏦 Банки', work: '💼 Работа', other: '📦 Другое' };
+    return names[cat] || '📦 Другое';
 }
 
 function formatDate(d) {
     return new Date(d).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+// ===== ПОЛЕ ПАРОЛЯ =====
+function PasswordField({ label, value, onChange, placeholder, required, id }) {
+    const [visible, setVisible] = React.useState(false);
+    return React.createElement('div', { className: 'form-group' },
+        React.createElement('label', { htmlFor: id }, label),
+        React.createElement('div', { className: 'password-input-wrapper' },
+            React.createElement('input', { id, type: visible ? 'text' : 'password', value, onChange, placeholder, required, className: 'password-field-input' }),
+            React.createElement('button', { type: 'button', className: 'toggle-password-btn', onClick: () => setVisible(!visible), title: visible ? 'Скрыть' : 'Показать' }, visible ? '🙈' : '👁️')
+        )
+    );
 }
 
 // ===== ГЛАВНЫЙ КОМПОНЕНТ =====
@@ -99,8 +108,11 @@ function App() {
     const [pinName, setPinName] = React.useState('');
     const [autoLockTime] = React.useState(10);
     const [lastActivity, setLastActivity] = React.useState(Date.now());
+    const [importStep, setImportStep] = React.useState(null);
+    const [importOldPassword, setImportOldPassword] = React.useState('');
+    const [importNewPassword, setImportNewPassword] = React.useState('');
+    const [importVaultData, setImportVaultData] = React.useState(null);
 
-    // Автоблокировка
     React.useEffect(() => {
         if (!isUnlocked) return;
         const interval = setInterval(() => {
@@ -141,8 +153,8 @@ function App() {
     };
 
     const generateRecoveryKey = () => {
-        const words = ['звезда', 'луна', 'солнце', 'река', 'гора', 'лес', 'море', 'небо', 'огонь', 'ветер', 'дождь', 'снег', 'цветок', 'дерево', 'камень', 'птица'];
-        return Array.from({ length: 6 }, () => words[Math.floor(Math.random() * words.length)]).join('-');
+        const words = ['звезда', 'луна', 'река', 'гора', 'лес', 'море', 'небо', 'огонь', 'ветер', 'снег', 'цветок', 'птица', 'камень', 'дождь'];
+        return Array.from({ length: 4 }, () => words[Math.floor(Math.random() * words.length)]).join('-');
     };
 
     const handleUnlock = async (e) => {
@@ -161,7 +173,7 @@ function App() {
             setIsUnlocked(true);
             setLastActivity(Date.now());
             StorageModule.saveHistory('Создание сейфа', 'Новый сейф создан');
-            showNotification('Сейф создан! Сохраните ключ восстановления!');
+            showNotification('Сейф создан!');
         } else {
             try {
                 const vault = StorageModule.loadVault();
@@ -170,7 +182,7 @@ function App() {
                 setIsUnlocked(true);
                 setLastActivity(Date.now());
                 setHistory(StorageModule.getHistory());
-                StorageModule.saveHistory('Вход в сейф', 'Пользователь разблокировал сейф');
+                StorageModule.saveHistory('Вход в сейф', 'Разблокировка');
                 showNotification('Сейф разблокирован!');
             } catch (e) { showNotification('Неверный мастер-пароль', true); }
         }
@@ -231,7 +243,7 @@ function App() {
         const p = passwords.find(x => x.id === id);
         const newPasswords = passwords.map(x => x.id === id ? { ...x, favorite: !x.favorite } : x);
         await savePasswords(newPasswords);
-        StorageModule.saveHistory(p.favorite ? 'Удалено из избранного' : 'Добавлено в избранное', p.title);
+        StorageModule.saveHistory(p.favorite ? 'Убрано из избранного' : 'Добавлено в избранное', p.title);
     };
 
     const copyToClipboard = (text, label) => {
@@ -267,10 +279,10 @@ function App() {
         const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Мои пароли</title>
         <style>body{font-family:Arial,sans-serif;padding:20px}h1{color:#333}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #ddd;padding:12px;text-align:left}th{background:#667eea;color:white}tr:nth-child(even){background:#f2f2f2}.warning{color:red;font-size:12px;margin-top:20px}.print-instruction{background:#fff3cd;padding:15px;border-radius:8px;margin:20px 0;border-left:4px solid #ffc107}@media print{.print-instruction{display:none}}</style></head>
         <body><h1>🔐 Мои пароли - ${new Date().toLocaleDateString('ru-RU')}</h1><p>Всего записей: ${passwords.length}</p>
-        <div class="print-instruction"><strong>📄 Как распечатать:</strong><br>Нажмите <strong>Ctrl + P</strong> (или Файл → Печать) для печати этого документа.</div>
+        <div class="print-instruction"><strong>📄 Как распечатать:</strong><br>Нажмите <strong>Ctrl + P</strong> (или Файл → Печать).</div>
         <table><tr><th>Название</th><th>Логин/Email</th><th>Пароль</th><th>Сайт</th><th>Категория</th><th>Избранное</th></tr>
         ${passwords.map(p => `<tr><td>${p.title}</td><td>${p.username}</td><td>${p.password}</td><td>${p.url || '-'}</td><td>${getCategoryName(p.category)}</td><td>${p.favorite ? '⭐' : ''}</td></tr>`).join('')}
-        </table><p class="warning">⚠️ ВНИМАНИЕ: Этот документ содержит пароли в открытом виде! Храните в безопасном месте!</p></body></html>`;
+        </table><p class="warning">️ ВНИМАНИЕ: Этот документ содержит пароли в открытом виде! Храните в безопасном месте!</p></body></html>`;
         const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -285,13 +297,39 @@ function App() {
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
-                StorageModule.saveVault(JSON.parse(event.target.result));
-                StorageModule.saveHistory('Импорт', 'Импортирован сейф из файла');
-                showNotification('Сейф импортирован! Перезагрузите страницу.');
-                setTimeout(() => window.location.reload(), 1500);
-            } catch (err) { showNotification('Ошибка импорта', true); }
+                const importedVault = JSON.parse(event.target.result);
+                setImportVaultData(importedVault);
+                setImportStep('old');
+                setImportOldPassword('');
+                setImportNewPassword('');
+            } catch (err) { showNotification('Ошибка импорта файла', true); }
         };
         reader.readAsText(file);
+    };
+
+    const handleImportOldPassword = async (e) => {
+        e.preventDefault();
+        try {
+            await CryptoModule.decrypt(importVaultData, importOldPassword);
+            setImportStep('new');
+            showNotification('Старый пароль принят! Введите новый.');
+        } catch (err) { showNotification('Неверный старый пароль', true); }
+    };
+
+    const handleImportNewPassword = async (e) => {
+        e.preventDefault();
+        if (importNewPassword.length < 6) { showNotification('Минимум 6 символов', true); return; }
+        const passwordsData = await CryptoModule.decrypt(importVaultData, importOldPassword);
+        const newEncrypted = await CryptoModule.encrypt(passwordsData, importNewPassword);
+        newEncrypted.recoveryKey = importVaultData.recoveryKey;
+        StorageModule.saveVault(newEncrypted);
+        StorageModule.saveHistory('Импорт', 'Импортирован сейф с новым паролем');
+        showNotification('Импорт завершён! Войдите с новым паролем.');
+        setImportStep(null);
+        setImportVaultData(null);
+        setImportOldPassword('');
+        setImportNewPassword('');
+        setTimeout(() => window.location.reload(), 1500);
     };
 
     const handleLock = () => {
@@ -303,7 +341,6 @@ function App() {
         showNotification('Сейф заблокирован');
     };
 
-    // PIN-коды
     const generatePin = () => {
         const array = new Uint32Array(pinLength);
         crypto.getRandomValues(array);
@@ -313,18 +350,18 @@ function App() {
     const savePin = () => {
         const pinToSave = manualPin || generatedPin;
         if (!pinToSave) { showNotification('Введите или сгенерируйте PIN', true); return; }
-        if (!pinName) { showNotification('Введите название (банк/карта)', true); return; }
+        if (!pinName) { showNotification('Введите название', true); return; }
         const newPins = [...pins, { id: Date.now(), name: pinName, pin: pinToSave, length: pinLength }];
         setPins(newPins);
         StorageModule.savePins(newPins);
         setManualPin('');
         setGeneratedPin('');
         setPinName('');
-        showNotification('PIN-код сохранён!');
+        showNotification('PIN сохранён!');
     };
 
     const deletePin = (id) => {
-        if (confirm('Удалить этот PIN-код?')) {
+        if (confirm('Удалить PIN-код?')) {
             const newPins = pins.filter(p => p.id !== id);
             setPins(newPins);
             StorageModule.savePins(newPins);
@@ -348,53 +385,102 @@ function App() {
         return matchSearch && matchCat && matchFav;
     });
 
+    const masterPasswordAnalysis = analyzePasswordStrength(masterPassword);
+
     // ===== ЭКРАН ВХОДА =====
     if (!isUnlocked) {
+        if (importStep === 'old') {
+            return React.createElement('div', { className: 'login-screen' },
+                React.createElement('div', { className: 'login-box' },
+                    React.createElement('h1', null, '📥 Импорт сейфа'),
+                    React.createElement('p', { className: 'subtitle' }, 'Введите мастер-пароль от импортируемого сейфа'),
+                    React.createElement('form', { onSubmit: handleImportOldPassword },
+                        React.createElement(PasswordField, { label: 'Старый мастер-пароль', value: importOldPassword, onChange: (e) => setImportOldPassword(e.target.value), placeholder: 'Введите старый пароль', required: true, id: 'import-old-pass' }),
+                        React.createElement('button', { type: 'submit', className: 'btn btn-primary' }, 'Далее'),
+                        React.createElement('button', { type: 'button', className: 'btn btn-secondary', style: { marginTop: '10px', width: '100%' }, onClick: () => setImportStep(null) }, 'Отмена')
+                    )
+                )
+            );
+        }
+
+        if (importStep === 'new') {
+            const newPassAnalysis = analyzePasswordStrength(importNewPassword);
+            return React.createElement('div', { className: 'login-screen' },
+                React.createElement('div', { className: 'login-box' },
+                    React.createElement('h1', null, '🔑 Новый мастер-пароль'),
+                    React.createElement('p', { className: 'subtitle' }, 'Придумайте новый пароль для этого устройства'),
+                    React.createElement('form', { onSubmit: handleImportNewPassword },
+                        React.createElement(PasswordField, { label: 'Новый мастер-пароль', value: importNewPassword, onChange: (e) => setImportNewPassword(e.target.value), placeholder: 'Введите новый пароль', required: true, id: 'import-new-pass' }),
+                        importNewPassword && React.createElement('div', { className: 'strength-indicator' },
+                            React.createElement('div', { className: 'strength-header' },
+                                React.createElement('span', { className: 'strength-label' }, 'Надёжность:'),
+                                React.createElement('span', { className: 'strength-value', style: { color: newPassAnalysis.color } }, newPassAnalysis.strength)
+                            ),
+                            React.createElement('div', { className: 'strength-bar-bg' },
+                                React.createElement('div', { className: 'strength-bar-fill', style: { width: `${(newPassAnalysis.score / 6) * 100}%`, background: newPassAnalysis.color } })
+                            )
+                        ),
+                        React.createElement('button', { type: 'submit', className: 'btn btn-primary' }, 'Завершить импорт'),
+                        React.createElement('button', { type: 'button', className: 'btn btn-secondary', style: { marginTop: '10px', width: '100%' }, onClick: () => setImportStep(null) }, 'Отмена')
+                    )
+                )
+            );
+        }
+
         if (showRecoveryKey) {
             return React.createElement('div', { className: 'login-screen' },
                 React.createElement('div', { className: 'login-box' },
                     React.createElement('h1', null, '🔑 Ключ восстановления'),
-                    React.createElement('p', { className: 'subtitle', style: { color: '#ef4444', fontWeight: 'bold' } }, '⚠️ СОХРАНИТЕ ЭТОТ КЛЮЧ!'),
+                    React.createElement('p', { className: 'subtitle warning-text' }, '⚠️ СОХРАНИТЕ ЭТОТ КЛЮЧ!'),
                     React.createElement('div', { className: 'recovery-key-box' }, recoveryKey),
-                    React.createElement('div', { className: 'info-box' }, React.createElement('p', null, '📋 Скопируйте ключ в надёжное место. Без него нельзя восстановить пароль!')),
-                    React.createElement('button', { className: 'btn btn-primary', style: { marginTop: '20px' }, onClick: () => setShowRecoveryKey(false) }, '✅ Я сохранил ключ')
+                    React.createElement('div', { className: 'info-box' }, 
+                        React.createElement('p', null, '📋 Скопируйте ключ в надёжное место (блокнот, фото, облако).'),
+                        React.createElement('p', { style: { marginTop: '8px' } }, '🔐 Без этого ключа НЕВОЗМОЖНО восстановить пароль!')
+                    ),
+                    React.createElement('button', { className: 'btn btn-primary', style: { marginTop: '20px' }, onClick: () => setShowRecoveryKey(false) }, '✅ Я записал ключ, продолжить')
                 )
             );
         }
+
         if (showRecoveryInput) {
             return React.createElement('div', { className: 'login-screen' },
                 React.createElement('div', { className: 'login-box' },
-                    React.createElement('h1', null, '🔑 Восстановление доступа'),
+                    React.createElement('h1', null, ' Восстановление доступа'),
                     React.createElement('p', { className: 'subtitle' }, 'Введите ключ восстановления'),
                     React.createElement('form', { onSubmit: handleRecovery },
                         React.createElement('div', { className: 'form-group' },
                             React.createElement('label', null, 'Ключ восстановления'),
-                            React.createElement('input', { type: 'text', value: recoveryInput, onChange: (e) => setRecoveryInput(e.target.value), placeholder: 'звезда-луна-солнце-...', required: true })
+                            React.createElement('input', { type: 'text', value: recoveryInput, onChange: (e) => setRecoveryInput(e.target.value), placeholder: 'слово-слово-слово-слово', required: true })
                         ),
-                        React.createElement('button', { type: 'submit', className: 'btn btn-primary' }, ' Восстановить'),
+                        React.createElement('button', { type: 'submit', className: 'btn btn-primary' }, '🔓 Восстановить'),
                         React.createElement('button', { type: 'button', className: 'btn btn-secondary', style: { marginTop: '10px', width: '100%' }, onClick: () => setShowRecoveryInput(false) }, '← Назад')
                     )
                 )
             );
         }
+
         return React.createElement('div', { className: 'login-screen' },
             React.createElement('div', { className: 'login-box' },
                 React.createElement('h1', null, '🔑 Цифровой Сейф'),
-                React.createElement('p', { className: 'subtitle' }, isFirstTime ? 'Создание нового сейфа' : 'Децентрализованное хранилище паролей'),
+                React.createElement('p', { className: 'subtitle' }, isFirstTime ? '✨ Создание нового сейфа' : '🔒 Децентрализованное хранилище паролей'),
                 React.createElement('form', { onSubmit: handleUnlock },
-                    React.createElement('div', { className: 'form-group' },
-                        React.createElement('label', null, 'Мастер-пароль'),
-                        React.createElement('input', { type: 'password', value: masterPassword, onChange: (e) => setMasterPassword(e.target.value), placeholder: 'Введите мастер-пароль', required: true })
+                    React.createElement(PasswordField, { label: ' Мастер-пароль', value: masterPassword, onChange: (e) => setMasterPassword(e.target.value), placeholder: 'Введите мастер-пароль', required: true, id: 'master-pass' }),
+                    isFirstTime && masterPassword && React.createElement('div', { className: 'strength-indicator' },
+                        React.createElement('div', { className: 'strength-header' },
+                            React.createElement('span', { className: 'strength-label' }, 'Надёжность:'),
+                            React.createElement('span', { className: 'strength-value', style: { color: masterPasswordAnalysis.color } }, masterPasswordAnalysis.strength)
+                        ),
+                        React.createElement('div', { className: 'strength-bar-bg' },
+                            React.createElement('div', { className: 'strength-bar-fill', style: { width: `${(masterPasswordAnalysis.score / 6) * 100}%`, background: masterPasswordAnalysis.color } })
+                        ),
+                        masterPasswordAnalysis.feedback.length > 0 && React.createElement('div', { className: 'strength-feedback' }, ' ', masterPasswordAnalysis.feedback.join(', '))
                     ),
-                    isFirstTime && React.createElement('div', { className: 'form-group' },
-                        React.createElement('label', null, 'Подтвердите пароль'),
-                        React.createElement('input', { type: 'password', value: confirmPassword, onChange: (e) => setConfirmPassword(e.target.value), placeholder: 'Повторите пароль', required: true })
-                    ),
+                    isFirstTime && React.createElement(PasswordField, { label: '🔑 Подтвердите пароль', value: confirmPassword, onChange: (e) => setConfirmPassword(e.target.value), placeholder: 'Повторите пароль', required: true, id: 'confirm-pass' }),
                     React.createElement('button', { type: 'submit', className: 'btn btn-primary' }, isFirstTime ? '🔐 Создать сейф' : '🔓 Разблокировать'),
-                    !isFirstTime && React.createElement('button', { type: 'button', className: 'btn btn-secondary', style: { marginTop: '10px', width: '100%' }, onClick: () => setShowRecoveryInput(true) }, ' Забыли пароль?'),
+                    !isFirstTime && React.createElement('button', { type: 'button', className: 'btn btn-secondary', style: { marginTop: '10px', width: '100%' }, onClick: () => setShowRecoveryInput(true) }, '🔑 Забыли пароль?'),
                     React.createElement('div', { className: 'info-box' },
-                        React.createElement('p', null, isFirstTime ? '⚠️ Запомните мастер-пароль!' : '🔒 AES-256-GCM | PBKDF2 | Без сервера | Без регистрации'),
-                        React.createElement('p', { className: 'support-info' }, '📞 Техподдержка: +7 (927) 602-62-39 (создатель: Вагапова И.Ф.)')
+                        React.createElement('p', null, '🔒 AES-256-GCM | PBKDF2 | Без сервера | Без регистрации'),
+                        React.createElement('p', { className: 'support-info' }, '📞 Техподдержка: +8 (927) 602-62-39 (создатель: Вагапова Ильвина)')
                     )
                 )
             )
@@ -405,7 +491,6 @@ function App() {
     return React.createElement('div', { className: 'container' },
         notification && React.createElement('div', { className: `notification ${notification.isError ? 'error' : ''}` }, notification.message),
 
-        // История
         showHistory && React.createElement('div', { className: 'modal-overlay', onClick: () => setShowHistory(false) },
             React.createElement('div', { className: 'modal history-modal', style: { maxWidth: '600px' }, onClick: (e) => e.stopPropagation() },
                 React.createElement('h2', null, '📜 История изменений'),
@@ -421,16 +506,14 @@ function App() {
             )
         ),
 
-        // PIN-коды
         showPinGenerator && React.createElement('div', { className: 'modal-overlay', onClick: () => setShowPinGenerator(false) },
             React.createElement('div', { className: 'modal pin-modal', style: { maxWidth: '550px' }, onClick: (e) => e.stopPropagation() },
                 React.createElement('h2', null, '🔢 Менеджер PIN-кодов'),
-                
                 React.createElement('div', { className: 'pin-add-section' },
                     React.createElement('h3', { className: 'modal-section-title' }, '➕ Добавить PIN-код'),
                     React.createElement('div', { className: 'form-group' },
-                        React.createElement('label', null, 'Название (банк/карта) *'),
-                        React.createElement('input', { type: 'text', value: pinName, onChange: (e) => setPinName(e.target.value), placeholder: 'Например: Сбербанк ****1234' })
+                        React.createElement('label', null, 'Название (банк/карта)'),
+                        React.createElement('input', { type: 'text', value: pinName, onChange: (e) => setPinName(e.target.value), placeholder: 'Сбербанк ****1234' })
                     ),
                     React.createElement('div', { className: 'form-group' },
                         React.createElement('label', null, 'Длина PIN-кода'),
@@ -446,27 +529,25 @@ function App() {
                     generatedPin && React.createElement('div', { className: 'generated-pin-display' }, generatedPin),
                     React.createElement('div', { className: 'form-group' },
                         React.createElement('label', null, 'Или введите PIN вручную'),
-                        React.createElement('input', { type: 'password', value: manualPin, onChange: (e) => setManualPin(e.target.value), placeholder: 'Введите PIN-код', maxLength: pinLength })
+                        React.createElement('input', { type: 'password', value: manualPin, onChange: (e) => setManualPin(e.target.value), placeholder: 'Введите PIN', maxLength: pinLength })
                     )
                 ),
-
-                React.createElement('h3', { className: 'modal-section-title' }, ` Сохранённые PIN-коды (${pins.length})`),
-                pins.length === 0 ? React.createElement('p', { className: 'empty-text' }, 'Нет сохранённых PIN-кодов')
+                React.createElement('h3', { className: 'modal-section-title' }, `📋 Сохранённые PIN-коды (${pins.length})`),
+                pins.length === 0 ? React.createElement('p', { className: 'empty-text' }, 'Нет PIN-кодов')
                 : React.createElement('div', { className: 'pins-list' },
                     pins.map(p => {
                         const isVisible = visiblePins[p.id];
                         return React.createElement('div', { key: p.id, className: 'pin-card-item' },
                             React.createElement('div', { className: 'pin-info' },
                                 React.createElement('div', { className: 'pin-name' }, p.name),
-                                React.createElement('div', { className: 'pin-value' }, 
-                                    isVisible ? p.pin : '•'.repeat(p.pin.length)
-                                )
+                                React.createElement('div', { className: 'pin-value' }, isVisible ? p.pin : '•'.repeat(p.pin.length))
                             ),
                             React.createElement('div', { className: 'pin-actions' },
                                 React.createElement('button', { 
                                     className: 'btn btn-secondary btn-icon', 
-                                    onClick: () => togglePinVisibility(p.id),
-                                    title: isVisible ? 'Скрыть PIN' : 'Показать PIN'
+                                    onClick: () => togglePinVisibility(p.id), 
+                                    title: isVisible ? 'Скрыть' : 'Показать',
+                                    style: { fontSize: '18px' }
                                 }, isVisible ? '🙈' : '👁️'),
                                 React.createElement('button', { className: 'btn btn-secondary btn-icon', onClick: () => copyPin(p.pin) }, '📋'),
                                 React.createElement('button', { className: 'btn btn-danger btn-icon', onClick: () => deletePin(p.id) }, '🗑️')
@@ -478,7 +559,6 @@ function App() {
             )
         ),
 
-        // Шапка
         React.createElement('div', { className: 'header' },
             React.createElement('h1', null, '🔑 Мой Цифровой Сейф'),
             React.createElement('div', { className: 'header-actions' },
@@ -496,7 +576,6 @@ function App() {
             )
         ),
 
-        // Статистика
         React.createElement('div', { className: 'stats-grid' },
             React.createElement('div', { className: 'stat-card stat-total' },
                 React.createElement('div', { className: 'stat-value' }, passwords.length),
@@ -516,18 +595,17 @@ function App() {
             )
         ),
 
-        // Панель управления
         React.createElement('div', { className: 'controls' },
             React.createElement('div', { className: 'search-box' },
-                React.createElement('input', { type: 'text', placeholder: '🔍 Поиск...', value: searchQuery, onChange: (e) => setSearchQuery(e.target.value) })
+                React.createElement('input', { type: 'text', placeholder: '🔍 Поиск по названию или логину...', value: searchQuery, onChange: (e) => setSearchQuery(e.target.value) })
             ),
             React.createElement('select', { className: 'filter-select', value: categoryFilter, onChange: (e) => setCategoryFilter(e.target.value) },
                 React.createElement('option', { value: 'all' }, '📁 Все категории'),
                 React.createElement('option', { value: 'social' }, '💬 Соцсети'),
-                React.createElement('option', { value: 'email' }, '📦 Почта'),
+                React.createElement('option', { value: 'email' }, '📧 Почта'),
                 React.createElement('option', { value: 'bank' }, '🏦 Банки'),
                 React.createElement('option', { value: 'work' }, '💼 Работа'),
-                React.createElement('option', { value: 'other' }, ' Другое')
+                React.createElement('option', { value: 'other' }, '📦 Другое')
             ),
             React.createElement('button', { className: 'btn btn-secondary', onClick: () => setShowFavoritesOnly(!showFavoritesOnly) }, showFavoritesOnly ? '⭐ Избранное' : '☆ Избранное'),
             React.createElement('button', { className: 'btn btn-secondary', onClick: () => { setHistory(StorageModule.getHistory()); setShowHistory(true); } }, '📜 История'),
@@ -535,17 +613,16 @@ function App() {
             React.createElement('button', { className: 'btn btn-primary', onClick: () => { setEditingPassword(null); setShowModal(true); } }, '➕ Добавить пароль')
         ),
 
-        // Список паролей
         filteredPasswords.length === 0
             ? React.createElement('div', { className: 'empty-state' },
-                React.createElement('div', { className: 'icon' }, ''),
+                React.createElement('div', { className: 'icon' }, '🔒'),
                 React.createElement('h3', null, passwords.length === 0 ? 'Сейф пуст' : 'Ничего не найдено'),
                 React.createElement('p', null, passwords.length === 0 ? 'Добавьте первый пароль' : 'Измените параметры поиска')
             )
             : React.createElement('div', { className: 'passwords-grid' },
                 filteredPasswords.map(p => React.createElement('div', { key: p.id, className: 'password-card' },
                     React.createElement('div', { className: 'card-header' },
-                        React.createElement('div', { className: 'card-title' }, p.favorite && React.createElement('span', { style: { marginRight: '8px' } }, '⭐'), p.title),
+                        React.createElement('div', { className: 'card-title' }, p.favorite && React.createElement('span', { className: 'fav-star' }, '⭐'), p.title),
                         React.createElement('div', { className: 'card-category' }, getCategoryName(p.category))
                     ),
                     React.createElement('div', { className: 'card-field' },
@@ -571,7 +648,7 @@ function App() {
                     React.createElement('div', { className: 'card-actions' },
                         React.createElement('button', { className: 'btn btn-secondary btn-icon', onClick: () => toggleFavorite(p.id) }, p.favorite ? '⭐ В избранном' : '☆ В избранное'),
                         React.createElement('button', { className: 'btn btn-secondary btn-icon', onClick: () => { setEditingPassword(p); setShowModal(true); } }, '✏️ Изменить'),
-                        React.createElement('button', { className: 'btn btn-danger btn-icon', onClick: () => handleDeletePassword(p.id) }, '️ Удалить')
+                        React.createElement('button', { className: 'btn btn-danger btn-icon', onClick: () => handleDeletePassword(p.id) }, '🗑️ Удалить')
                     )
                 ))
             ),
@@ -580,7 +657,7 @@ function App() {
     );
 }
 
-// ===== МОДАЛЬНОЕ ОКНО ПАРОЛЯ =====
+// ===== МОДАЛКА ПАРОЛЯ =====
 function PasswordModal({ password, onSave, onClose, darkMode }) {
     const [formData, setFormData] = React.useState(password || { title: '', username: '', password: '', url: '', category: 'other', favorite: false });
     const [showGenerator, setShowGenerator] = React.useState(false);
@@ -614,7 +691,9 @@ function PasswordModal({ password, onSave, onClose, darkMode }) {
                 ),
                 React.createElement('div', { className: 'form-group' },
                     React.createElement('label', null, 'Пароль *'),
-                    React.createElement('input', { type: 'text', value: formData.password, onChange: (e) => setFormData({ ...formData, password: e.target.value }), placeholder: 'Введите пароль', required: true }),
+                    React.createElement('div', { className: 'password-input-wrapper' },
+                        React.createElement('input', { type: 'text', value: formData.password, onChange: (e) => setFormData({ ...formData, password: e.target.value }), placeholder: 'Введите пароль', required: true, className: 'password-field-input' })
+                    ),
                     formData.password && React.createElement('div', { className: 'strength-indicator' },
                         React.createElement('div', { className: 'strength-header' },
                             React.createElement('span', { className: 'strength-label' }, 'Надёжность:'),
@@ -625,7 +704,7 @@ function PasswordModal({ password, onSave, onClose, darkMode }) {
                         ),
                         analysis.feedback.length > 0 && React.createElement('div', { className: 'strength-feedback' }, '💡 ', analysis.feedback.join(', '))
                     ),
-                    React.createElement('button', { type: 'button', className: 'btn btn-secondary', style: { marginTop: '10px', width: '100%' }, onClick: () => setShowGenerator(!showGenerator) }, showGenerator ? '🔼 Скрыть генератор' : '🎲 Сгенерировать пароль')
+                    React.createElement('button', { type: 'button', className: 'btn btn-secondary', style: { marginTop: '10px', width: '100%' }, onClick: () => setShowGenerator(!showGenerator) }, showGenerator ? ' Скрыть генератор' : ' Сгенерировать пароль')
                 ),
                 showGenerator && React.createElement('div', { className: 'password-generator' },
                     React.createElement('div', { className: 'generated-password' },
@@ -639,7 +718,7 @@ function PasswordModal({ password, onSave, onClose, darkMode }) {
                         React.createElement('label', null, React.createElement('input', { type: 'checkbox', checked: genOptions.symbols, onChange: (e) => setGenOptions({ ...genOptions, symbols: e.target.checked }) }), '!@#'),
                         React.createElement('label', null, 'Длина:', React.createElement('input', { type: 'number', min: '8', max: '64', value: genLength, onChange: (e) => setGenLength(parseInt(e.target.value)), className: 'gen-length-input' }))
                     ),
-                    generatedPassword && React.createElement('button', { type: 'button', className: 'btn btn-success', style: { marginTop: '10px', width: '100%' }, onClick: () => { setFormData({ ...formData, password: generatedPassword }); setShowGenerator(false); } }, '✅ Использовать')
+                    generatedPassword && React.createElement('button', { type: 'button', className: 'btn btn-success', style: { marginTop: '10px', width: '100%' }, onClick: () => { setFormData({ ...formData, password: generatedPassword }); setShowGenerator(false); } }, '✅ Использовать этот пароль')
                 ),
                 React.createElement('div', { className: 'form-group' },
                     React.createElement('label', null, 'Сайт (необязательно)'),
@@ -657,7 +736,7 @@ function PasswordModal({ password, onSave, onClose, darkMode }) {
                 ),
                 React.createElement('div', { className: 'modal-actions' },
                     React.createElement('button', { type: 'button', className: 'btn btn-secondary', onClick: onClose }, 'Отмена'),
-                    React.createElement('button', { type: 'submit', className: 'btn btn-primary' }, ' Сохранить')
+                    React.createElement('button', { type: 'submit', className: 'btn btn-primary' }, '💾 Сохранить')
                 )
             )
         )

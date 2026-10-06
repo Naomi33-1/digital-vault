@@ -1,0 +1,27 @@
+@page
+@model RazorPagesDemo.Pages.ContactModel
+
+@{
+    ViewData["Title"] = "Связаться с нами";
+}
+
+<h2>Форма связи</h2>
+
+<form method="post">
+    <!-- Блок для вывода общих ошибок валидации -->
+    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+    
+    <div class="form-group mb-3">
+        <!-- Тег-хелперы автоматически создают правильные HTML-атрибуты -->
+        <label asp-for="Message" class="form-label"></label>
+        <input asp-for="Message" class="form-control" />
+        <span asp-validation-for="Message" class="text-danger"></span>
+    </div>
+    
+    <button type="submit" class="btn btn-primary">Отправить</button>
+</form>
+
+<!-- Подключение скриптов для мгновенной проверки на стороне браузера -->
+@section Scripts {
+    @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
+}
